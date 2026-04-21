@@ -12,24 +12,22 @@ async function notificarMake({ mascota, fecha, hora, motivo, notas, dueno, telef
   const url = import.meta.env.VITE_MAKE_WEBHOOK
   if (!url) return
 
-  const texto = [
-    '🐾 Nueva cita agendada!',
-    '',
-    `🐶 Mascota: ${mascota}`,
-    `📅 Fecha: ${fecha}`,
-    `⏰ Hora: ${hora}`,
-    `🏥 Motivo: ${motivo}`,
-    `👤 Dueño: ${dueno}`,
-    telefono ? `📱 WhatsApp: ${telefono}` : null,
-    notas ? `📝 Notas: ${notas}` : null,
-  ].filter(Boolean).join('\n')
+  const texto = encodeURIComponent(
+    [
+      '🐾 Nueva cita agendada!',
+      '',
+      `🐶 Mascota: ${mascota}`,
+      `📅 Fecha: ${fecha}`,
+      `🕐 Hora: ${hora}`,
+      `🏥 Motivo: ${motivo}`,
+      `👤 Dueño: ${dueno}`,
+      telefono ? `📱 WhatsApp: ${telefono}` : null,
+      notas    ? `📝 Notas: ${notas}`       : null,
+    ].filter(Boolean).join('\n')
+  )
 
   try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mascota, fecha, hora, motivo, notas, dueno, telefono, texto }),
-    })
+    await fetch(`${url}?texto=${texto}`, { method: 'GET' })
   } catch (e) {
     console.warn('Webhook no disponible:', e.message)
   }
