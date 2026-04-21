@@ -8,7 +8,9 @@ import PetDetail        from './pages/PetDetail'
 import BookAppointment  from './pages/BookAppointment'
 import AddPet           from './pages/AddPet'
 import Noticias         from './pages/Noticias'
+import Operativos       from './pages/Operativos'
 import Perfil           from './pages/Perfil'
+import Admin            from './pages/Admin'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -38,7 +40,9 @@ export default function App() {
           <Route path="/agendar"         element={<ProtectedRoute><BookAppointment/></ProtectedRoute>}/>
           <Route path="/agregar-mascota" element={<ProtectedRoute><AddPet/></ProtectedRoute>}/>
           <Route path="/noticias"        element={<ProtectedRoute><Noticias/></ProtectedRoute>}/>
+          <Route path="/operativos"      element={<ProtectedRoute><Operativos/></ProtectedRoute>}/>
           <Route path="/perfil"          element={<ProtectedRoute><Perfil/></ProtectedRoute>}/>
+          <Route path="/admin"           element={<ProtectedRoute><Admin/></ProtectedRoute>}/>
         </Routes>
       </BrowserRouter>
     </AuthProvider>
