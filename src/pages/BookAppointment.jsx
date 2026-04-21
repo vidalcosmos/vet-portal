@@ -1,64 +1,127 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 const HORARIOS = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00',
                   '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00']
 const MOTIVOS  = ['Vacuna','Consulta general','Control','Desparasitación','Urgencia','Otro']
 const EMOJI    = { Perro:'🐶', Gato:'🐱', Ave:'🐦', Conejo:'🐰', Otro:'🐾' }
 
+async function notificarMake({ mascota, fecha, hora, motivo, notas, dueno, telefono }) {
+  const url = import.meta.env.VITE_MAKE_WEBHOOK
+  if (!url) return
+
+  const texto = [
+    '🐾 Nueva cita agendada!',
+    '',
+    `🐶 Mascota: ${mascota}`,
+    `📅 Fecha: ${fecha}`,
+    `⏰ Hora: ${hora}`,
+    `🏥 Motivo: ${motivo}`,
+    `👤 Dueño: ${dueno}`,
+    telefono ? `📱 WhatsApp: ${telefono}` : null,
+    notas ? `📝 Notas: ${notas}` : null,
+  ].filter(Boolean).join('\n')
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mascota, fecha, hora, motivo, notas, dueno, telefono, texto }),
+    })
+  } catch (e) {
+    console.warn('Webhook no disponible:', e.message)
+  }
+}
+
 export default function BookAppointment() {
   const { user }    = useAuth()
-  const navigate    = useNavigate()
-  const [mascotas, setMascotas] = useState([])
+  const [mascotas,  setMascotas]  = useState([])
+  const [owner,     setOwner]     = useState(null)
   const [mascotaId, setMascotaId] = useState('')
-  const [fecha,    setFecha]    = useState('')
-  const [hora,     setHora]     = useState('')
-  const [motivo,   setMotivo]   = useState('Consulta general')
-  const [notas,    setNotas]    = useState('')
-  const [loading,  setLoading]  = useState(false)
-  const [success,  setSuccess]  = useState(false)
+  const [fecha,     setFecha]     = useState('')
+  const [hora,      setHora]      = useState('')
+  const [motivo,    setMotivo]    = useState('Consulta general')
+  const [notas,     setNotas]     = useState('')
+  const [loading,   setLoading]   = useState(false)
+  const [success,   setSuccess]   = useState(false)
+  const [notifOk,   setNotifOk]   = useState(false)
 
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
-    supabase.from('mascotas').select('id,nombre,especie').then(({ data }) => {
-      setMascotas(data ?? [])
-      if (data?.length) setMascotaId(data[0].id)
-    })
+    async function load() {
+      const [{ data: o }, { data: m }] = await Promise.all([
+        supabase.from('owners').select('nombre, telefono_wa').eq('id', user.id).single(),
+        supabase.from('mascotas').select('id, nombre, especie'),
+      ])
+      setOwner(o)
+      setMascotas(m ?? [])
+      if (m?.length) setMascotaId(m[0].id)
+    }
+    load()
   }, [user])
 
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
+
     const { error } = await supabase.from('citas').insert({
       mascota_id: mascotaId,
       fecha_hora: `${fecha}T${hora}:00`,
-      motivo,
-      notas,
+      motivo, notas,
       estado: 'Pendiente',
       canal:  'Web',
     })
+
+    if (!error) {
+      const mascotaNombre = mascotas.find(m => m.id === mascotaId)?.nombre ?? '—'
+
+      await notificarMake({
+        mascota:  mascotaNombre,
+        fecha,
+        hora,
+        motivo,
+        notas:    notas || 'Sin notas',
+        dueno:    owner?.nombre || user.email,
+        telefono: owner?.telefono_wa || '',
+      })
+
+      setNotifOk(true)
+      setSuccess(true)
+    }
+
     setLoading(false)
-    if (!error) setSuccess(true)
   }
 
-  if (success) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-gray-100 w-full max-w-md p-8 text-center">
-        <div className="text-5xl mb-4">✅</div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">¡Hora agendada!</h2>
-        <p className="text-gray-500 text-sm mb-6">
-          Te contactaremos por WhatsApp para confirmar tu cita.<br/>
-          <span className="font-medium">{fecha} a las {hora}</span>
-        </p>
-        <Link to="/" className="bg-teal-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-teal-700 transition-colors">
-          Volver al inicio
-        </Link>
+  if (success) {
+    const mascotaNombre = mascotas.find(m => m.id === mascotaId)?.nombre ?? '—'
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl border border-gray-100 w-full max-w-md p-8 text-center">
+          <div className="text-5xl mb-4">✅</div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">¡Hora agendada!</h2>
+          <div className="bg-gray-50 rounded-xl p-4 text-left text-sm space-y-1.5 mb-5">
+            <p><span className="text-gray-400">Mascota:</span> <span className="font-medium">{mascotaNombre}</span></p>
+            <p><span className="text-gray-400">Fecha:</span> <span className="font-medium">{fecha}</span></p>
+            <p><span className="text-gray-400">Hora:</span> <span className="font-medium">{hora}</span></p>
+            <p><span className="text-gray-400">Motivo:</span> <span className="font-medium">{motivo}</span></p>
+          </div>
+          {notifOk && (
+            <div className="flex items-center justify-center gap-2 text-xs text-green-600 bg-green-50 rounded-lg px-3 py-2 mb-5">
+              <span>✓</span>
+              <span>Veterinario notificado por WhatsApp</span>
+            </div>
+          )}
+          <Link to="/"
+            className="block w-full bg-teal-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-teal-700 transition-colors text-center">
+            Volver al inicio
+          </Link>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -104,7 +167,9 @@ export default function BookAppointment() {
               {MOTIVOS.map(m => (
                 <button key={m} type="button" onClick={() => setMotivo(m)}
                   className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
-                    motivo === m ? 'bg-teal-600 text-white border-teal-600' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    motivo === m
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}>
                   {m}
                 </button>
@@ -129,7 +194,9 @@ export default function BookAppointment() {
                 {HORARIOS.map(h => (
                   <button key={h} type="button" onClick={() => setHora(h)}
                     className={`py-2 rounded-lg text-sm border transition-all ${
-                      hora === h ? 'bg-teal-600 text-white border-teal-600' : 'border-gray-200 text-gray-700 hover:border-teal-300'
+                      hora === h
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'border-gray-200 text-gray-700 hover:border-teal-300'
                     }`}>
                     {h}
                   </button>
@@ -150,9 +217,31 @@ export default function BookAppointment() {
             />
           </div>
 
-          <button type="submit" disabled={loading || !mascotaId || !fecha || !hora}
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-3 rounded-xl text-sm transition-colors disabled:opacity-40">
-            {loading ? 'Agendando...' : `Confirmar — ${fecha || '—'} ${hora || '—'}`}
+          {/* Resumen + botón */}
+          {mascotaId && fecha && hora && (
+            <div className="bg-teal-50 border border-teal-100 rounded-xl p-4 text-sm">
+              <p className="font-medium text-teal-800 mb-2">Resumen de tu cita</p>
+              <div className="space-y-1 text-teal-700">
+                <p>🐾 {mascotas.find(m => m.id === mascotaId)?.nombre} — {motivo}</p>
+                <p>📅 {fecha} a las {hora}</p>
+                <p>👤 {owner?.nombre || user.email}</p>
+                {owner?.telefono_wa && <p>📱 {owner.telefono_wa}</p>}
+              </div>
+            </div>
+          )}
+
+          <button type="submit"
+            disabled={loading || !mascotaId || !fecha || !hora}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-medium py-3 rounded-xl text-sm transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+            {loading ? (
+              <>
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Agendando...
+              </>
+            ) : 'Confirmar cita'}
           </button>
         </form>
       </main>
