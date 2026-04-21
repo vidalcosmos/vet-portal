@@ -1,0 +1,10 @@
+import BottomNav from './BottomNav'
+
+export default function Layout({ children }) {
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {children}
+      <BottomNav />
+    </div>
+  )
+}
